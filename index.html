@@ -10,7 +10,12 @@
     <h1>Darts Training</h1>
     <p>Click on the dartboard to select your finish!</p>
     <div class="dartboard-container">
-        <img src="https://cdn.pixabay.com/photo/2012/04/01/18/38/dartboard-23938_1280.png" alt="Dartboard" class="dartboard">
+        <canvas id="dartboardCanvas" width="500" height="500"></canvas>
     </div>
+    <p id="result"></p>
+    <button id="randomFinish">Generate Random Finish</button>
+    <p id="targetFinish"></p>
+    
+    <script src="script.js"></script>
 </body>
 </html>
