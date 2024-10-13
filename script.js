@@ -1,39 +1,43 @@
-window.onload = function() {
-    var canvas = document.getElementById('dartboardCanvas');
-    var ctx = canvas.getContext('2d');
-    var radius = canvas.width / 2;
+const dartboardCanvas = document.getElementById('dartboardCanvas');
+const ctx = dartboardCanvas.getContext('2d');
+const radius = dartboardCanvas.width / 2;
+const resultDisplay = document.getElementById('result');
+const targetFinishDisplay = document.getElementById('targetFinish');
+let targetFinish = 0;
 
-    function drawSection(startAngle, endAngle, color) {
-        ctx.beginPath();
-        ctx.moveTo(radius, radius);
-        ctx.arc(radius, radius, radius, startAngle, endAngle);
-        ctx.closePath();
-        ctx.fillStyle = color;
-        ctx.fill();
-    }
+// تحميل الصورة
+const dartboardImage = new Image();
+dartboardImage.src = 'https://cdn.pixabay.com/photo/2012/04/01/18/38/dartboard-23938_1280.png';
 
-    // الألوان الدائرية
-    var colors = ['green', 'red', 'black', 'white'];
-    var sectionAngle = (2 * Math.PI) / 20;
-
-    // رسم القطاعات الـ 20
-    for (var i = 0; i < 20; i++) {
-        var startAngle = i * sectionAngle;
-        var endAngle = startAngle + sectionAngle;
-        var color = colors[i % colors.length];
-        drawSection(startAngle, endAngle, color);
-    }
-
-    // رسم المركز
-    ctx.beginPath();
-    ctx.arc(radius, radius, radius / 10, 0, 2 * Math.PI);
-    ctx.fillStyle = 'red';
-    ctx.fill();
-    ctx.closePath();
-
-    ctx.beginPath();
-    ctx.arc(radius, radius, radius / 20, 0, 2 * Math.PI);
-    ctx.fillStyle = 'green';
-    ctx.fill();
-    ctx.closePath();
+// رسم لوحة الدارتس بالصورة
+dartboardImage.onload = function() {
+    ctx.drawImage(dartboardImage, 0, 0, dartboardCanvas.width, dartboardCanvas.height);
 };
+
+// حدث النقر على اللوحة
+dartboardCanvas.addEventListener('click', function(event) {
+    const x = event.offsetX;
+    const y = event.offsetY;
+    const distanceFromCenter = Math.sqrt(Math.pow(x - radius, 2) + Math.pow(y - radius, 2));
+
+    let score = 0;
+    if (distanceFromCenter < radius / 10) {
+        score = 50; // bullseye
+    } else if (distanceFromCenter < radius / 5) {
+        score = 25; // outer bullseye
+    } else {
+        score = Math.floor(Math.random() * 20 + 1); // random score for simplicity
+    }
+
+    if (score === targetFinish) {
+        resultDisplay.textContent = `Correct! You hit ${score}.`;
+    } else {
+        resultDisplay.textContent = `Wrong! You hit ${score}. Target was ${targetFinish}.`;
+    }
+});
+
+// توليد Finish عشوائي
+document.getElementById('randomFinish').addEventListener('click', function() {
+    targetFinish = Math.floor(Math.random() * 50 + 1);
+    targetFinishDisplay.textContent = `Target Finish: ${targetFinish}`;
+});
