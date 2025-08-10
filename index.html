@@ -1,21 +1,700 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Darts Training</title>
-    <link rel="stylesheet" href="style.css">
-</head>
-<body>
-    <h1>Darts Training</h1>
-    <p>Click on the dartboard to select your finish!</p>
-    <div class="dartboard-container">
-        <canvas id="dartboardCanvas" width="500" height="500"></canvas>
-    </div>
-    <p id="result"></p>
-    <button id="randomFinish">Generate Random Finish</button>
-    <p id="targetFinish"></p>
-    
-    <script src="script.js"></script>
-</body>
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover"
+    />
+    <title>Moroccan Darts — Finish Trainer</title>
+    <!-- Tailwind CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React 18 + ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <!-- Babel (to run JSX directly) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <meta name="theme-color" content="#1b7a3a" />
+    <style>
+      html, body, #root { height: 100%; }
+    </style>
+  </head>
+  <body class="bg-black">
+    <div id="root"></div>
+
+    <script type="text/babel">
+      const { useEffect, useMemo, useRef, useState } = React;
+
+      // --- Helpers -----------------------------------------------------------------
+      const SECTORS = [20,1,18,4,13,6,10,15,2,17,3,19,7,16,8,11,14,9,12,5];
+
+      function scoreOf(hit) {
+        if (hit === "DB") return 50;
+        if (hit === "OB") return 25;
+        const mult = hit[0];
+        const n = parseInt(hit.slice(1), 10);
+        if (mult === "S") return n;
+        if (mult === "D") return 2 * n;
+        if (mult === "T") return 3 * n;
+        return 0;
+      }
+
+      function isDoubleOrBull(hit) {
+        return hit === "DB" || hit.startsWith("D");
+      }
+
+      const ALL_HITS = (() => {
+        const list = ["DB","OB"];
+        for (let n=1;n<=20;n++) list.push(`S${n}`, `D${n}`, `T${n}`);
+        return list;
+      })();
+
+      function findFinish(target) {
+        for (const h of ALL_HITS) {
+          if (scoreOf(h) === target && isDoubleOrBull(h)) return [h];
+        }
+        for (const a of ALL_HITS) {
+          const r1 = target - scoreOf(a);
+          if (r1 <= 0) continue;
+          for (const b of ALL_HITS) {
+            if (scoreOf(b) === r1 && isDoubleOrBull(b)) return [a,b];
+          }
+        }
+        for (const a of ALL_HITS) {
+          const r1 = target - scoreOf(a);
+          if (r1 <= 0) continue;
+          for (const b of ALL_HITS) {
+            const r2 = r1 - scoreOf(b);
+            if (r2 <= 0) continue;
+            for (const c of ALL_HITS) {
+              if (scoreOf(c) === r2 && isDoubleOrBull(c)) return [a,b,c];
+            }
+          }
+        }
+        return null;
+      }
+
+      // generate multiple checkout routes (1-3 darts, end on double/bull)
+      function generateFinishes(target, limit=20) {
+        const out = new Set();
+        const push = (arr) => {
+          const key = arr.join(" ");
+          if (!out.has(key)) out.add(key);
+        };
+        // 1-dart
+        for (const c of ALL_HITS) {
+          if (!isDoubleOrBull(c)) continue;
+          if (scoreOf(c) === target) push([c]);
+        }
+        // 2-dart
+        for (const a of ALL_HITS) {
+          const r1 = target - scoreOf(a);
+          if (r1 <= 0 || r1 === 1) continue;
+          for (const c of ALL_HITS) {
+            if (!isDoubleOrBull(c)) continue;
+            if (scoreOf(c) === r1) push([a,c]);
+          }
+        }
+        // 3-dart
+        for (const a of ALL_HITS) {
+          const r1 = target - scoreOf(a);
+          if (r1 <= 0 || r1 === 1) continue;
+          for (const b of ALL_HITS) {
+            const r2 = r1 - scoreOf(b);
+            if (r2 <= 0 || r2 === 1) continue;
+            for (const c of ALL_HITS) {
+              if (!isDoubleOrBull(c)) continue;
+              if (scoreOf(c) === r2) push([a,b,c]);
+            }
+          }
+        }
+        const routes = Array.from(out).map(s=>s.split(" "));
+        routes.sort((A,B)=>{
+          if (A.length !== B.length) return A.length - B.length;
+          const tA = A.filter(x=>x.startsWith("T")).length;
+          const tB = B.filter(x=>x.startsWith("T")).length;
+          return tB - tA;
+        });
+        return routes.slice(0, limit);
+      }
+
+      function randomCheckout(min=2, max=170) {
+        for (let i=0;i<999;i++) {
+          const s = Math.floor(Math.random()*(max-min+1))+min;
+          const fin = findFinish(s);
+          if (fin) return { score:s, finish:fin };
+        }
+        return { score:170, finish:["T20","T20","DB"] };
+      }
+
+      // --- Color utils -------------------------------------------------------------
+      const lighten = (hex, amt=30) => {
+        const num = parseInt(hex.replace("#",""), 16);
+        const r = Math.min(255, (num>>16)+amt);
+        const g = Math.min(255, ((num>>8)&0xff)+amt);
+        const b = Math.min(255, (num&0xff)+amt);
+        return `#${((r<<16)|(g<<8)|b).toString(16).padStart(6,"0")}`;
+      };
+
+      // THEME
+      const THEME = {
+        bgFrom: "#3a141a",
+        bgVia: "#161a16",
+        bgTo:  "#0c0f0c",
+        accentRed: "#a1061a",
+        accentRedHover: "#c70b27",
+        accentGreen: "#1b7a3a",
+        accentGreenHover: "#259f4c",
+      };
+
+      // --- Modal -------------------------------------------------------------------
+      function Modal({ open, onClose, children }) {
+        if (!open) return null;
+        return (
+          <div className="fixed inset-0 z-50">
+            <div className="absolute inset-0 bg-black/70" onClick={onClose}/>
+            <div className="absolute inset-0 flex items-center justify-center p-4">
+              <div className="w-full max-w-md rounded-2xl bg-slate-950 shadow-2xl border border-white/10">
+                {children}
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // --- Sound FX ----------------------------------------------------------------
+      function useSound() {
+        const ctxRef = useRef(null);
+        const mutedRef = useRef(false);
+        const ensure = () => {
+          if (!ctxRef.current) {
+            const AC = window.AudioContext || window.webkitAudioContext;
+            if (!AC) return null;
+            ctxRef.current = new AC();
+          }
+          if (ctxRef.current.state === "suspended") ctxRef.current.resume();
+          return ctxRef.current;
+        };
+        const beep = (freq, duration=0.09, type="sine", vol=0.03, startAt) => {
+          if (mutedRef.current) return;
+          const ctx = ensure();
+          if (!ctx) return;
+          const t0 = startAt ?? ctx.currentTime;
+          const o = ctx.createOscillator();
+          const g = ctx.createGain();
+          o.type = type;
+          o.frequency.value = freq;
+          o.connect(g);
+          g.connect(ctx.destination);
+          g.gain.setValueAtTime(vol, t0);
+          g.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
+          o.start(t0);
+          o.stop(t0 + duration);
+        };
+        const playHit = (hit) => {
+          if (hit === "DB") return beep(660, 0.12, "triangle", 0.035);
+          if (hit === "OB") return beep(520, 0.1, "triangle", 0.03);
+          if (hit.startsWith("T")) return beep(600, 0.09, "square", 0.03);
+          if (hit.startsWith("D")) return beep(520, 0.09, "square", 0.03);
+          return beep(440, 0.08, "sine", 0.025);
+        };
+        const playWin = () => {
+          const ctx = ensure();
+          if (!ctx || mutedRef.current) return;
+          const seq = [660, 880, 990];
+          seq.forEach((f,i)=>beep(f,0.12,"triangle",0.035, ctx.currentTime + i*0.12));
+        };
+        const playBust = () => beep(200, 0.25, "sawtooth", 0.04);
+        const setMuted = (v) => (mutedRef.current = v);
+        return { playHit, playWin, playBust, setMuted };
+      }
+
+      // --- Dartboard --------------------------------------------------------------
+      function Dartboard({ onHit, calibrationDeg=15 }) {
+        const size = 420;
+        const R = size/2;
+        const rings = {
+          db: 0.06*R,
+          ob: 0.12*R,
+          innerSingle: 0.42*R,
+          trebleOuter: 0.48*R,
+          outerSingle: 0.75*R,
+          doubleOuter: 0.82*R,
+        };
+
+        const rotationOffset = -8; // CCW
+        const [hover, setHover] = useState(null);
+
+        const locateHit = (clientX, clientY, currentTarget) => {
+          const rect = currentTarget.getBoundingClientRect();
+          const x = clientX - rect.left;
+          const y = clientY - rect.top;
+          const dx = x - R;
+          const dy = y - R;
+          const r = Math.sqrt(dx*dx + dy*dy);
+
+          if (r > rings.doubleOuter) return null;
+          if (r <= rings.db) return { ring: "DB" };
+          if (r <= rings.ob) return { ring: "OB" };
+
+          let deg = (Math.atan2(dy, dx) * 180) / Math.PI;
+          deg = (deg + 450 + rotationOffset + calibrationDeg) % 360;
+
+          const sectorIndex = Math.floor(deg / 18) % 20;
+          const number = SECTORS[sectorIndex];
+
+          let ring;
+          if (r <= rings.innerSingle) ring = "S";
+          else if (r <= rings.trebleOuter) ring = "T";
+          else if (r <= rings.outerSingle) ring = "S";
+          else ring = "D";
+
+          return { ring, number };
+        };
+
+        const handleMove = (e)=>setHover(locateHit(e.clientX, e.clientY, e.currentTarget));
+        const handleLeave = ()=>setHover(null);
+        const handleClick = (e)=>{
+          const h = locateHit(e.clientX, e.clientY, e.currentTarget);
+          if (!h) return;
+          if (h.ring === "DB") return onHit("DB");
+          if (h.ring === "OB") return onHit("OB");
+          onHit(`${h.ring}${h.number}`);
+        };
+
+        const colors = {
+          singleLight: "#201a1b",
+          singleDark:  "#151212",
+          trebleRed:   "#b3162a",
+          trebleGreen: "#1f8a43",
+          doubleRed:   "#b3162a",
+          doubleGreen: "#1f8a43",
+          ob: "#3b3b3b",
+          db: "#0f9d58",
+        };
+
+        const sectors = useMemo(()=>{
+          const items = [];
+          const toXY = (radius, angleDeg)=>[
+            R + radius * Math.cos(Math.PI*angleDeg/180),
+            R + radius * Math.sin(Math.PI*angleDeg/180),
+          ];
+
+          for (let i=0;i<20;i++) {
+            const start = -90 + rotationOffset + i*18;
+            const end   = start + 18;
+            const midIsDark = i % 2 === 0;
+
+            const ringDefs = [
+              { r1: 0.12*R, r2: 0.42*R, fill: midIsDark ? colors.singleDark : colors.singleLight, tag:"S" },
+              { r1: 0.42*R, r2: 0.48*R, fill: i%2 ? colors.trebleGreen : colors.trebleRed, tag:"T" },
+              { r1: 0.48*R, r2: 0.75*R, fill: midIsDark ? colors.singleDark : colors.singleLight, tag:"S" },
+              { r1: 0.75*R, r2: 0.82*R, fill: i%2 ? colors.doubleGreen : colors.doubleRed, tag:"D" },
+            ];
+
+            ringDefs.forEach((ring, idx)=>{
+              const [x1,y1] = toXY(ring.r1, start);
+              const [x2,y2] = toXY(ring.r1, end);
+              const [x3,y3] = toXY(ring.r2, end);
+              const [x4,y4] = toXY(ring.r2, start);
+              const d = `M ${x1} ${y1} A ${ring.r1} ${ring.r1} 0 0 1 ${x2} ${y2} L ${x3} ${y3} A ${ring.r2} ${ring.r2} 0 0 0 ${x4} ${y4} Z`;
+
+              let fill = ring.fill;
+              if (hover && hover.number === SECTORS[i] && hover.ring === ring.tag) {
+                fill = lighten(ring.fill, 50);
+              }
+
+              items.push(<path key={`${i}-${idx}`} d={d} fill={fill} stroke="#0b0b0b" strokeWidth={0.6} />);
+            });
+          }
+          return items;
+        }, [R, hover]);
+
+        return (
+          <div className="flex items-center justify-center">
+            <svg
+              width={size}
+              height={size}
+              className="rounded-full shadow-2xl cursor-pointer select-none"
+              onMouseMove={handleMove}
+              onMouseLeave={handleLeave}
+              onClick={handleClick}
+              role="button"
+              aria-label="Dartboard"
+            >
+              <defs>
+                <radialGradient id="boardBg" cx="50%" cy="50%" r="50%">
+                  <stop offset="0%" stopColor="#1a0f12" />
+                  <stop offset="100%" stopColor="#0d0f0f" />
+                </radialGradient>
+              </defs>
+              <rect x={0} y={0} width={size} height={size} fill="url(#boardBg)" />
+              <circle cx={R} cy={R} r={R} fill="#0c0c0c" />
+              {sectors}
+              <circle cx={R} cy={R} r={0.12*R} fill={hover?.ring==="OB" ? lighten("#2e2e2e",40) : "#2e2e2e"} />
+              <circle cx={R} cy={R} r={0.06*R} fill={hover?.ring==="DB" ? lighten("#0f9d58",40) : "#0f9d58"} />
+              {SECTORS.map((n,i)=>{
+                const angle = (-90 + (-8) + i*18 + 9) * (Math.PI/180);
+                const x = R + 0.9*R*Math.cos(angle);
+                const y = R + 0.9*R*Math.sin(angle);
+                const isOn = hover && hover.number === n;
+                return (
+                  <text key={i} x={x} y={y} textAnchor="middle" dominantBaseline="middle"
+                        fontSize={isOn?16:14} fill={isOn?"#fff":"#f2f2f2"} fontWeight={800}>
+                    {n}
+                  </text>
+                );
+              })}
+            </svg>
+          </div>
+        );
+      }
+
+      // --- Small UI helpers --------------------------------------------------------
+      const HitChip = ({ hit }) => (
+        <div
+          className="w-14 h-14 shrink-0 rounded-xl bg-white/10 ring-1 ring-white/10 shadow flex flex-col items-center justify-center"
+          title={`${hit} = ${scoreOf(hit)} pts`}
+          aria-label={`${hit} equals ${scoreOf(hit)} points`}
+        >
+          <div className="text-sm font-extrabold leading-none">{hit}</div>
+          <div className="text-xs text-white/80 leading-none mt-1">{scoreOf(hit)}</div>
+        </div>
+      );
+
+      // --- Header (Branding) -------------------------------------------------------
+      function HeaderBrand() {
+        return (
+          <div className="w-full sticky top-0 z-40">
+            <div
+              className="max-w-6xl mx-auto flex items-center justify-between gap-3 px-4 py-3 rounded-b-2xl"
+              style={{ background: `linear-gradient(90deg, ${THEME.accentRed}26, transparent)` }}
+            >
+              <div className="flex items-center gap-3">
+                <a
+                  href="https://www.facebook.com/dartsMaroc2019/"
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="inline-flex"
+                  title="Moroccan Darts Facebook"
+                >
+                  <img
+                    src="https://i.ibb.co/0RkXngBW/1.png"
+                    alt="Moroccan Darts logo"
+                    className="h-11 w-11 rounded-lg shadow ring-1 ring-white/10 hover:scale-105 transition"
+                  />
+                </a>
+                <div className="text-xl font-extrabold tracking-wide" style={{ color: THEME.accentGreen, textShadow: "0 1px 0 #000" }}>
+                  Moroccan Darts
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // --- UI ----------------------------------------------------------------------
+      function DartsFinishTrainer() {
+        const [target, setTarget] = useState(0);
+        const [throwsLeft, setThrowsLeft] = useState(3);
+        const [hits, setHits] = useState([]);
+        const [scoreLeft, setScoreLeft] = useState(0);
+        const [won, setWon] = useState(false);
+        const [message, setMessage] = useState("");
+        const [hideScore, setHideScore] = useState(false);
+        const [muted, setMuted] = useState(false);
+
+        const [openWinModal, setOpenWinModal] = useState(false);
+        const [openHintModal, setOpenHintModal] = useState(false);
+        const [hintList, setHintList] = useState([]);
+
+        const { playHit, playWin, playBust, setMuted: setMutedInHook } = useSound();
+        useEffect(()=>{ setMutedInHook(muted); }, [muted, setMutedInHook]);
+
+        const startNewRound = () => {
+          const { score } = randomCheckout(2,170);
+          setTarget(score);
+          setThrowsLeft(3);
+          setHits([]);
+          setScoreLeft(score);
+          setWon(false);
+          setMessage("");
+          setOpenWinModal(false);
+        };
+
+        useEffect(()=>{ startNewRound(); }, []);
+
+        // compute finishes + minDarts
+        const finishRoutes = useMemo(()=>generateFinishes(scoreLeft || target, 60), [scoreLeft, target]);
+        const minDarts = finishRoutes.length ? Math.min(...finishRoutes.map(r=>r.length)) : null;
+        const finishHintText = minDarts ? (minDarts===1 ? "You can finish in 1 dart" : `You can finish in ${minDarts} darts`) : "No finish available now";
+
+        const registerHit = (hit) => {
+          if (won || throwsLeft <= 0) return;
+          const hitScore = scoreOf(hit);
+          const newScore = scoreLeft - hitScore;
+
+          playHit(hit);
+
+          if (newScore < 0 || newScore === 1) {
+            setMessage("Bust! Try again.");
+            setThrowsLeft(0);
+            playBust();
+            return;
+          }
+
+          const newHits = [...hits, hit];
+          const newThrowsLeft = throwsLeft - 1;
+
+          if (newScore === 0) {
+            if (isDoubleOrBull(hit)) {
+              setHits(newHits);
+              setScoreLeft(0);
+              setWon(true);
+              setMessage("Well Done!");
+              setOpenWinModal(true);
+              playWin();
+              return;
+            } else {
+              setMessage("Must finish on a double! Bust.");
+              setThrowsLeft(0);
+              playBust();
+              return;
+            }
+          }
+
+          setHits(newHits);
+          setScoreLeft(newScore);
+          setThrowsLeft(newThrowsLeft);
+
+          if (newThrowsLeft === 0) setMessage("Out of darts. Try again!");
+        };
+
+        const tryAgain = () => {
+          setThrowsLeft(3);
+          setHits([]);
+          setScoreLeft(target);
+          setWon(false);
+          setMessage("");
+          setOpenWinModal(false);
+        };
+
+        const undoLast = () => {
+          if (!hits.length) return;
+          const last = hits[hits.length-1];
+          setHits(hits.slice(0,-1));
+          setScoreLeft(scoreLeft + scoreOf(last));
+          setThrowsLeft(Math.min(3, throwsLeft + 1));
+          setMessage("");
+        };
+
+        const openHint = () => {
+          const list = generateFinishes(scoreLeft || target, 30);
+          setHintList(list);
+          setOpenHintModal(true);
+        };
+
+        return (
+          <div className="min-h-screen w-full text-white" style={{
+            background: `linear-gradient(135deg, ${THEME.bgFrom}, ${THEME.bgVia}, ${THEME.bgTo})`
+          }}>
+            <HeaderBrand />
+
+            <div className="max-w-5xl mx-auto grid md:grid-cols-2 gap-8 items-start px-4 py-6">
+              {/* Column 1 */}
+              <div className="space-y-4">
+                <div className="mx-auto text-center w-full">
+                  <div className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 backdrop-blur shadow-lg"
+                       style={{ background: `${THEME.accentRed}22` }}>
+                    <span className="text-sm uppercase tracking-widest text-white/80">Target</span>
+                    <span className="text-4xl font-black" style={{ color: THEME.accentGreen }}>{target}</span>
+                  </div>
+                  <div className="mt-2 text-sm font-medium" style={{ color: minDarts ? THEME.accentGreen : THEME.accentRed }}>
+                    {finishHintText}
+                  </div>
+                </div>
+
+                <div className="rounded-3xl p-4 shadow-xl" style={{ background: "#131416", border: "1px solid #ffffff22" }}>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="text-lg font-semibold">Score left</div>
+                      <button
+                        onClick={()=>setHideScore(v=>!v)}
+                        className="p-1 rounded hover:opacity-90"
+                        style={{ background: `${THEME.accentGreen}22` }}
+                        aria-label={hideScore ? "Show score left" : "Hide score left"}
+                        title={hideScore ? "Show" : "Hide"}
+                      >
+                        {hideScore ? (
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 5c-3.8 0-6.9 2.2-9.5 6.5a1 1 0 0 0 0 1c2.6 4.3 5.7 6.5 9.5 6.5 3.8 0 6.9-2.2 9.5-6.5a1 1 0 0 0 0-1c-2.6-4.3-5.7-6.5-9.5-6.5Zm0 3a4 4 0 1 1 0 8 4 4 0 0 1 0-8Z" />
+                            <line x1="4" y1="4" x2="20" y2="20" stroke="currentColor" strokeWidth="2" />
+                          </svg>
+                        ) : (
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 5c-3.8 0-6.9 2.2-9.5 6.5a1 1 0 0 0 0 1C5.1 17.8 8.2 20 12 20s6.9-2.2 9.5-6.5a1 1 0 0 0 0-1C18.9 7.2 15.8 5 12 5Zm0 12a4 4 0 1 1 0-8 4 4 0 0 1 0 8Z" />
+                          </svg>
+                        )}
+                      </button>
+                      <button
+                        onClick={()=>setMuted(m=>!m)}
+                        className="p-1 rounded ml-2 hover:opacity-90"
+                        style={{ background: `${THEME.accentRed}22` }}
+                        aria-label={muted ? "Unmute sounds" : "Mute sounds"}
+                        title={muted ? "Unmute" : "Mute"}
+                      >
+                        {muted ? (
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M9 7L5 11H2v2h3l4 4V7z"/>
+                            <line x1="16" y1="8" x2="22" y2="14" stroke="currentColor" strokeWidth="2" />
+                            <line x1="16" y1="14" x2="22" y2="8" stroke="currentColor" strokeWidth="2" />
+                          </svg>
+                        ) : (
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M9 7L5 11H2v2h3l4 4V7z"/>
+                            <path d="M16 7a6 6 0 0 1 0 10"/>
+                            <path d="M18.5 4.5a10 10 0 0 1 0 15"/>
+                          </svg>
+                        )}
+                      </button>
+                    </div>
+
+                    <div className="text-3xl font-black tabular-nums">{hideScore ? "•••" : scoreLeft}</div>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div className="text-white/70">
+                      Throws left: <span className="font-bold text-white">{throwsLeft}</span>
+                    </div>
+                    <div className="text-white/70">Hits:</div>
+                  </div>
+
+                  <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+                    {hits.length ? (
+                      hits.map((h,i)=><HitChip key={`${h}-${i}`} hit={h} />)
+                    ) : (
+                      <div className="text-white/60 text-sm">—</div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    onClick={undoLast}
+                    className="rounded-xl px-4 py-2 shadow-lg hover:brightness-110 active:scale-95 transition"
+                    style={{ background: THEME.accentGreen }}
+                  >Back</button>
+                  <button
+                    onClick={tryAgain}
+                    className="rounded-xl px-4 py-2 shadow-lg hover:brightness-110 active:scale-95 transition"
+                    style={{ background: THEME.accentRed }}
+                  >Try Again</button>
+                  <button
+                    onClick={openHint}
+                    className="rounded-xl px-4 py-2 shadow-lg hover:brightness-110 active:scale-95 transition"
+                    style={{ background: THEME.accentGreen }}
+                  >Hint</button>
+                  <button
+                    onClick={startNewRound}
+                    className="rounded-xl px-4 py-2 shadow-lg hover:brightness-110 active:scale-95 transition"
+                    style={{ background: THEME.accentRed }}
+                  >New Target</button>
+                </div>
+
+                {message && !openWinModal && (
+                  <div className="mt-3 rounded-xl px-4 py-3 shadow-lg" style={{ background: `${THEME.accentGreen}55` }}>
+                    <div className="text-xl font-bold">{won ? "Well Done!" : "Notice"}</div>
+                    <div className="text-white/90">{message}</div>
+                  </div>
+                )}
+
+                <div className="mt-1 text-white/70 text-sm leading-relaxed">
+                  Hover over the board to preview the segment (it lights up). Click to register a hit. You must finish on a double (or bull).
+                </div>
+              </div>
+
+              {/* Column 2 */}
+              <div className="rounded-3xl p-4 shadow-2xl" style={{ background: "#131416", border: "1px solid #ffffff22" }}>
+                <Dartboard onHit={registerHit} calibrationDeg={15} />
+              </div>
+            </div>
+
+            {/* Win Modal */}
+            <Modal open={openWinModal} onClose={()=>setOpenWinModal(false)}>
+              <div className="p-5">
+                <div className="text-2xl font-extrabold mb-2">🎉 Well Done!</div>
+                <div className="text-white/80 mb-5">Do you want to play the same target again or get a new target?</div>
+                <div className="flex gap-3 justify-end">
+                  <button
+                    onClick={()=>{ setOpenWinModal(false); tryAgain(); }}
+                    className="px-4 py-2 rounded-xl shadow hover:brightness-110"
+                    style={{ background: THEME.accentRed }}
+                  >Try Again</button>
+                  <button
+                    onClick={()=>{ setOpenWinModal(false); startNewRound(); }}
+                    className="px-4 py-2 rounded-xl shadow hover:brightness-110"
+                    style={{ background: THEME.accentGreen }}
+                  >New Target</button>
+                </div>
+              </div>
+            </Modal>
+
+            {/* Hint Modal */}
+            <Modal open={openHintModal} onClose={()=>setOpenHintModal(false)}>
+              <div className="p-5 max-h-[75vh] overflow-y-auto">
+                <div className="text-2xl font-extrabold mb-2" style={{ color: THEME.accentGreen }}>💡 Possible Finishes</div>
+                <div className="text-white/70 text-sm mb-4">Ending on a double (or bull). Showing up to 30 routes.</div>
+                {finishRoutes.length ? (
+                  <ul className="space-y-2">
+                    {finishRoutes.slice(0,30).map((route, idx)=>(
+                      <li key={idx} className="rounded-lg px-3 py-2" style={{ background: "#151515" }}>
+                        <span className="font-mono text-white">{route.join(" · ")}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="rounded-lg border px-3 py-2" style={{ background: "#2a1a1d", borderColor: "#3a2226" }}>
+                    No finish available from here (must end on a double).
+                  </div>
+                )}
+                <div className="flex justify-end mt-4">
+                  <button onClick={()=>setOpenHintModal(false)} className="px-4 py-2 rounded-xl hover:brightness-110" style={{ background: THEME.accentRed }}>
+                    Close
+                  </button>
+                </div>
+              </div>
+            </Modal>
+          </div>
+        );
+      }
+
+      // --- Self-tests (optional) ---------------------------------------------------
+      function runSelfTests() {
+        const CASES = [
+          { score: 170, expects: ["T20 T20 DB"] },
+          { score: 167, expects: ["T20 T19 DB"] },
+          { score: 164, expects: ["T20 T18 DB"] },
+          { score: 110, expects: ["T20 S10 D20"] },
+          { score: 50,  expects: ["DB"] },
+          { score: 40,  expects: ["D20"] },
+          { score: 32,  expects: ["D16"] },
+          { score: 2,   expects: ["D1"] },
+        ];
+        console.group("DartsFinishTrainer self-tests");
+        CASES.forEach((t)=>{
+          const got = generateFinishes(t.score, 60).map(r=>r.join(" "));
+          const ok  = t.expects.some(e=>got.includes(e));
+          console[ok ? "log":"warn"](`${t.score}: ${ok ? "PASS":"FAIL"} — expects one of [${t.expects.join(", ")}], got sample: ${got.slice(0,6).join(" | ")}`);
+        });
+        console.groupEnd();
+      }
+      if (location.search.includes("devtests=1")) {
+        try { runSelfTests(); } catch(e) { console.warn("Self-tests error:", e); }
+      }
+
+      // --- Mount -------------------------------------------------------------------
+      const root = ReactDOM.createRoot(document.getElementById("root"));
+      root.render(<DartsFinishTrainer />);
+    </script>
+  </body>
 </html>
